@@ -1,0 +1,13 @@
+.sconsign.dblite
+*.o
+*.swp
+cscope.*
+CMakeLists.txt.user
+build
+dbus_*_generated.*
+.idea
+cscope*
+*.swp
+*.autosave
+error.log
+bin
