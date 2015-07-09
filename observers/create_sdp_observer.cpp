@@ -8,9 +8,10 @@
 const std::string SDP_TYPE_NAME = "type";
 const std::string SDP_NAME = "sdp";
 
-CreateSDPObserver *CreateSDPObserver::Create(webrtc::PeerConnectionInterface* pc)
+CreateSDPObserver *CreateSDPObserver::Create(webrtc::PeerConnectionInterface* pc,
+                                             sigc::signal<void, Json::Value> signal_sdp_feedback)
 {
-    return  new rtc::RefCountedObject<CreateSDPObserver>(pc);
+    return  new rtc::RefCountedObject<CreateSDPObserver>(pc, signal_sdp_feedback);
 }
 
 void CreateSDPObserver::OnSuccess(webrtc::SessionDescriptionInterface* desc)
@@ -27,8 +28,9 @@ void CreateSDPObserver::OnSuccess(webrtc::SessionDescriptionInterface* desc)
 
     // trick for Firefox H264 support
     sdp += "a=fmtp:126 profile-level-id=42e01f;level-asymmetry-allowed=1;packetization-mode=1\r\n";
-
     jmessage[SDP_NAME] = sdp;
+
+    signal_sdp_feedback(jmessage);
 }
 
 void CreateSDPObserver::OnFailure(const std::string& error)

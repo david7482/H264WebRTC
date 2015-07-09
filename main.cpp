@@ -14,10 +14,12 @@ void read_eventstream_line(GDataInputStream *input_stream, gpointer user_data);
 
 const gchar *server_address = "http://demo.openwebrtc.io:38080";
 bool is_verbose_mode = false;
-gchar *session_id = NULL;
+gchar *session_id = NULL, *peer_id = NULL;
+guint32 client_id = 0;
 int mode = 0;
 GMainLoop *main_loop;
 PeerManager *peer_manager = NULL;
+bool is_peer_joined = false;
 
 GOptionEntry opt_entries[] = {
         {"verbose",   'v', 0, G_OPTION_ARG_NONE,   &is_verbose_mode, "Enable verbose mode (default: disable)",                                             NULL},
@@ -33,93 +35,106 @@ gboolean on_sig_handler(gpointer userdata)
     return G_SOURCE_REMOVE;
 }
 
-/*void process_jumbo_message(const std::string jumbo_message)
+static void answer_finish(SoupSession *soup_session, GAsyncResult *result, gpointer user_data)
 {
-    Json::Reader reader;
+    GInputStream *input_stream;
+    input_stream = soup_session_send_finish(soup_session, result, NULL);
+    if (!input_stream)
+        g_warning("Failed to send back to server");
+    else
+        g_object_unref(input_stream);
+}
+
+void signal_sdp_feedback(Json::Value value)
+{
     Json::Value jmessage;
-    if (!reader.parse(jumbo_message, jmessage)) {
-        g_critical("Fail to parse jumbo message");
-        return;
-    }
+    jmessage["sdp"] = value;
 
-    std::string message_type;
-    g_return_if_fail(rtc::GetStringFromJsonObject(jmessage, "message_type", &message_type));
-    {
-        if (message_type == "response") {
-            std::string response_type;
-            g_return_if_fail(rtc::GetStringFromJsonObject(jmessage, "response_type", &response_type));
-            g_debug("response_type: %s", response_type.c_str());
-        }
-        else if (message_type == "request") {
-            std::string request_type;
-            g_return_if_fail(rtc::GetStringFromJsonObject(jmessage, "request_type", &request_type));
-            {
-                g_debug("request_type: %s", request_type.c_str());
-                if (request_type == "sdp") {
-                    std::string usersession_id;
-                    g_return_if_fail(rtc::GetStringFromJsonObject(jmessage, "usersession_id", &usersession_id));
+    std::string sdp = JsonValueToString(jmessage);
+    g_debug("%s", sdp.c_str());
 
-                    Json::Value jpayload;
-                    g_return_if_fail(rtc::GetValueFromJsonObject(jmessage, "payload", &jpayload));
+    gchar *url = g_strdup_printf("%s/ctos/%s/%u/%s", h264webrtc::server_address, session_id, client_id, peer_id);
+    SoupMessage *soup_message = soup_message_new("POST", url);
+    soup_message_set_request(soup_message, "application/json", SOUP_MEMORY_COPY, sdp.c_str(), sdp.length());
+    g_free(url);
 
-                    peer_manager->setOffser(usersession_id, rtc::JsonValueToString(jpayload));
-                }
-                else if (request_type == "hangup") {
-                    std::string usersession_id;
-                    g_return_if_fail(rtc::GetStringFromJsonObject(jmessage, "usersession_id", &usersession_id));
+    SoupSession *soup_session = soup_session_new();
+    soup_session_send_async(soup_session, soup_message, NULL, (GAsyncReadyCallback) answer_finish, NULL);
+}
 
-                    peer_manager->deletePeerConnection(usersession_id);
-                }
-            }
-        }
-        else {
-            g_debug("Fail to parse jumbo message");
-        }
-    }
-}*/
-
-/*void send_jumbo_message(const std::string &type, const Json::Value &jumbo_message)
+void signal_candidate_feedback(Json::Value value)
 {
-Json::Value jmessage;
-jmessage["message_type"] = "response";
-jmessage["response_type"] = type;
-jmessage["payload"] = jumbo_message;
+    Json::Value jmessage;
+    jmessage["candidate"] = value;
 
-std::string init = rtc::JsonValueToString(jmessage);
-g_debug("msg: %s", init.c_str());
-soup_websocket_connection_send_text(conn, init.c_str());
-}*/
+    std::string candidate = JsonValueToString(jmessage);
+    g_debug("%s", candidate.c_str());
+
+    gchar *url = g_strdup_printf("%s/ctos/%s/%u/%s", h264webrtc::server_address, session_id, client_id, peer_id);
+    SoupSession *soup_session = soup_session_new();
+    SoupMessage *soup_message = soup_message_new("POST", url);
+    g_free(url);
+    soup_message_set_request(soup_message, "application/json", SOUP_MEMORY_COPY, candidate.c_str(), candidate.length());
+    soup_session_send_async(soup_session, soup_message, NULL, (GAsyncReadyCallback) answer_finish, NULL);
+}
 
 void eventstream_line_read(GDataInputStream *input_stream, GAsyncResult *result, gpointer user_data)
 {
     gchar *line;
     gsize line_length;
-    gboolean peer_joined = GPOINTER_TO_UINT(user_data);
 
     line = g_data_input_stream_read_line_finish_utf8(input_stream, result, &line_length, NULL);
     g_return_if_fail(line);
 
     //g_debug("%s", line);
-    if (g_strstr_len(line, MIN(line_length, 6), "data:{")) {
-        Json::Reader reader;
-        Json::Value jmessage;
-        if (reader.parse(line + 5, jmessage)) {
-            Json::Value value;
-            if (GetValueFromJsonObject(jmessage, "sdp", &value)) {
-                g_debug("Get sdp");
-                peer_manager->setOffser("lalala", value);
-            } else if (GetValueFromJsonObject(jmessage, "candidate", &value)) {
-                g_debug("Get candidate");
-                peer_manager->addIceCandidate("lalala", value);
-            } else {
-                g_critical("Invalid json message");
+    if (!is_peer_joined && g_strstr_len(line, MIN(line_length, 10), "event:join")) {
+
+        is_peer_joined = true;
+        g_debug("Peer joined");
+
+    } else if (is_peer_joined && g_strstr_len(line, MIN(line_length, 11), "event:leave")) {
+
+        peer_manager->deletePeerConnection(peer_id);
+        g_free(peer_id);
+        peer_id = NULL;
+        is_peer_joined = false;
+        g_debug("Peer leave");
+
+    } else if (is_peer_joined && g_strstr_len(line, MIN(line_length, 5), "data:")) {
+
+        if (g_strstr_len(line, MIN(line_length, 6), "data:{")) {
+            // Handle the "data:{"sdp":...}" and "data:{"candidate":...}" case
+            Json::Reader reader;
+            Json::Value jmessage;
+            if (reader.parse(line + 5, jmessage)) {
+                Json::Value value;
+                if (GetValueFromJsonObject(jmessage, "sdp", &value)) {
+
+                    g_debug("Get sdp ->");
+                    peer_manager->setOffser(peer_id, value);
+                    g_debug("Get sdp <-");
+
+                } else if (GetValueFromJsonObject(jmessage, "candidate", &value)) {
+
+                    g_debug("Get candidate ->");
+                    peer_manager->addIceCandidate(peer_id, value);
+                    g_debug("Get candidate <-");
+
+                } else {
+                    g_debug("Invalid json message: %s", line + 5);
+                }
             }
+        } else {
+            // Handle the peer id
+            peer_id = g_strndup(line + 5, line_length - 5);
+            g_debug("Get peer_id: %s", peer_id);
         }
+
     }
 
     g_free(line);
 
-    read_eventstream_line(input_stream, GUINT_TO_POINTER(peer_joined));
+    read_eventstream_line(input_stream, NULL);
 }
 
 void read_eventstream_line(GDataInputStream *input_stream, gpointer user_data)
@@ -182,13 +197,17 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    rtc::LogMessage::LogToDebug((h264webrtc::is_verbose_mode) ? rtc::INFO : rtc::LERROR);
-    rtc::LogMessage::LogTimestamps();
-    rtc::LogMessage::LogThreads();
+    if (h264webrtc::is_verbose_mode) {
+        //rtc::LogMessage::LogToDebug((h264webrtc::is_verbose_mode) ? rtc::INFO : rtc::LERROR);
+        //rtc::LogMessage::LogTimestamps();
+        //rtc::LogMessage::LogThreads();
+        g_setenv("G_MESSAGES_DEBUG", "all", TRUE);
+    }
     rtc::InitializeSSL();
 
     // Create the soup session and connect to signal server
-    gchar *url = g_strdup_printf("%s/stoc/%s/%u", h264webrtc::server_address, h264webrtc::session_id, g_random_int());
+    h264webrtc::client_id = g_random_int();
+    gchar *url = g_strdup_printf("%s/stoc/%s/%u", h264webrtc::server_address, h264webrtc::session_id, h264webrtc::client_id);
     if (url) {
         h264webrtc::send_eventsource_request(url);
         g_free(url);
@@ -196,6 +215,8 @@ int main(int argc, char **argv)
 
     // webrtc server
     h264webrtc::peer_manager = h264webrtc::PeerManager::Create("stun.l.google.com:19302");
+    h264webrtc::peer_manager->signal_sdp_feedback.connect(sigc::ptr_fun(h264webrtc::signal_sdp_feedback));
+    h264webrtc::peer_manager->signal_candidate_feedback.connect(sigc::ptr_fun(h264webrtc::signal_candidate_feedback));
 
     // Create and start the main loop
     h264webrtc::main_loop = g_main_loop_new(NULL, FALSE);

@@ -9,7 +9,7 @@
 class PeerConnectionObserver : public webrtc::PeerConnectionObserver
 {
 public:
-    static PeerConnectionObserver * Create();
+    static PeerConnectionObserver * Create(sigc::signal<void, Json::Value> signal_candidate_feedback);
     virtual ~PeerConnectionObserver() {}
 
     virtual void OnIceCandidate(const webrtc::IceCandidateInterface* candidate);
@@ -24,7 +24,12 @@ public:
     virtual void OnIceComplete() {}
 
 protected:
-    PeerConnectionObserver() {};
+    PeerConnectionObserver(sigc::signal<void, Json::Value> signal_candidate_feedback)
+        : signal_candidate_feedback(signal_candidate_feedback)
+    {};
+
+private:
+    sigc::signal<void, Json::Value> signal_candidate_feedback;
 
 };
 

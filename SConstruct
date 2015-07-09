@@ -28,6 +28,7 @@ env.ParseConfig('pkg-config --cflags --libs libcrypto')
 env.ParseConfig('pkg-config --cflags --libs nss')
 env.ParseConfig('pkg-config --cflags --libs openh264')
 env.ParseConfig('pkg-config --cflags --libs jsoncpp')
+env.ParseConfig('pkg-config --cflags --libs sigc++-2.0')
 
 # Set sources for H264WebRTC
 sources = [	'main.cpp',

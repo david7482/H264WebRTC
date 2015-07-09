@@ -58,7 +58,7 @@ PeerManagerImp::PeerManagerImp(const std::string &stunurl) :
             worker_thread,
             signaling_thread,
             NULL,
-            encoder_factory,
+            NULL,
             NULL
     );
     if (!peer_connection_factory.get()) {
@@ -96,6 +96,7 @@ void PeerManagerImp::setOffser(const std::string &peerid, const Json::Value &sdp
         g_warning("setOffser <- Fail to initialize peer connection");
         return;
     }
+    g_debug("Success to create peer connection");
 
     // Set SDP offer to the PeerConnection
     rtc::scoped_refptr<webrtc::PeerConnectionInterface> pc = peer_connection.first;
@@ -109,7 +110,7 @@ void PeerManagerImp::setOffser(const std::string &peerid, const Json::Value &sdp
     webrtc::FakeConstraints constraints;
     constraints.AddMandatory(webrtc::MediaConstraintsInterface::kOfferToReceiveVideo, false);
     constraints.AddMandatory(webrtc::MediaConstraintsInterface::kOfferToReceiveAudio, false);
-    //pc->CreateAnswer(CreateSDPObserver::Create(pc, jumbo_msg_sender), &constraints);
+    pc->CreateAnswer(CreateSDPObserver::Create(pc, signal_sdp_feedback), &constraints);
 
     g_debug("setOffser <- peerid: %s", peerid.c_str());
 }
@@ -121,7 +122,7 @@ std::pair<rtc::scoped_refptr<webrtc::PeerConnectionInterface>, webrtc::PeerConne
     server.uri = "stun:" + stunurl;
     servers.push_back(server);
 
-    PeerConnectionObserver *obs = PeerConnectionObserver::Create();
+    PeerConnectionObserver *obs = PeerConnectionObserver::Create(signal_candidate_feedback);
     rtc::scoped_refptr<webrtc::PeerConnectionInterface> peer_connection =
             peer_connection_factory->CreatePeerConnection(servers, NULL, NULL, NULL, obs);
     if (!peer_connection.get()) {
