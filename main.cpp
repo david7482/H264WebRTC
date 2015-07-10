@@ -198,9 +198,9 @@ int main(int argc, char **argv)
     }
 
     if (h264webrtc::is_verbose_mode) {
-        //rtc::LogMessage::LogToDebug((h264webrtc::is_verbose_mode) ? rtc::INFO : rtc::LERROR);
-        //rtc::LogMessage::LogTimestamps();
-        //rtc::LogMessage::LogThreads();
+        rtc::LogMessage::LogToDebug((h264webrtc::is_verbose_mode) ? rtc::INFO : rtc::LERROR);
+        rtc::LogMessage::LogTimestamps();
+        rtc::LogMessage::LogThreads();
         g_setenv("G_MESSAGES_DEBUG", "all", TRUE);
     }
     rtc::InitializeSSL();

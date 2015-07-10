@@ -1,9 +1,10 @@
-#include "open_h264_video_encoder_impl.h"
+#include "open_h264_encoder_impl.h"
 
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <vector>
+#include <wels/codec_app_def.h>
 
 #include "glib.h"
 #include "webrtc/common.h"
@@ -15,7 +16,11 @@
 #include "webrtc/base/scoped_ptr.h"
 #include "wels/codec_app_def.h"
 
-OpenH264Encoder *OpenH264Encoder::Create()
+namespace h264webrtc
+{
+
+
+H264Encoder *H264Encoder::Create()
 {
     return new OpenH264EncoderImpl();
 }
@@ -148,24 +153,7 @@ int OpenH264EncoderImpl::GetTotalNaluCount(const SFrameBSInfo &info)
 
     for (int layer_index = 0; layer_index < info.iLayerNum; layer_index++) {
         const SLayerBSInfo *layer_bs_info = &info.sLayerInfo[layer_index];
-        if (layer_bs_info != NULL) {
-            int layer_size = 0;
-            int nal_begin = 4;
-            uint8_t *nal_buffer = NULL;
-            char nal_type = 0;
-            for (int nal_index = 0; nal_index < layer_bs_info->iNalCount; nal_index++) {
-                nal_buffer = layer_bs_info->pBsBuf + nal_begin;
-                nal_type = (nal_buffer[0] & 0x1F);
-                //nal_type    = (nal_buffer[4] & 0x1F);
-                //UMBO_DBG("Nalu type: %d", nal_type);
-                layer_size += layer_bs_info->pNalLengthInByte[nal_index];
-                nal_begin += layer_size;
-                if (nal_type == 14) {
-                    continue;
-                }
-                totalNaluCount++;
-            }
-        }
+        totalNaluCount += layer_bs_info->iNalCount;
     }
 
     return totalNaluCount;
@@ -182,27 +170,20 @@ bool OpenH264EncoderImpl::GetRTPFragmentationHeaderH264(const SFrameBSInfo &info
             int layer_size = 0;
             int nal_begin = 4;
             uint8_t *nal_buffer = NULL;
-            char nal_type = 0;
 
             for (int nal_index = 0; nal_index < layer_bs_info->iNalCount; nal_index++) {
 
                 nal_buffer = layer_bs_info->pBsBuf + nal_begin;
-                nal_type = (nal_buffer[0] & 0x1F);
                 layer_size += layer_bs_info->pNalLengthInByte[nal_index];
                 nal_begin += layer_size;
-                g_debug("Nalu type: %d", nal_type);
-                if (nal_type == 14) {
-                    continue;
-                }
 
-                uint32_t currentNaluSize = layer_bs_info->pNalLengthInByte[nal_index] - 4;
-                //encoded_image._length        = layer_bs_info->iNalLengthInByte[nal_index];
-                memcpy(encoded_image._buffer + encoded_image._length, nal_buffer, currentNaluSize);
+                int currentNaluSize = layer_bs_info->pNalLengthInByte[nal_index] - 4;
+                memcpy(encoded_image._buffer + encoded_image._length, nal_buffer, (size_t)currentNaluSize);
                 encoded_image._length += currentNaluSize;
 
                 header.fragmentationOffset[totalNaluIndex] = encoded_image._length - currentNaluSize;
-                header.fragmentationLength[totalNaluIndex] = currentNaluSize;
-                header.fragmentationPlType[totalNaluIndex] = nal_type;
+                header.fragmentationLength[totalNaluIndex] = (size_t)currentNaluSize;
+                header.fragmentationPlType[totalNaluIndex] = 0;
                 header.fragmentationTimeDiff[totalNaluIndex] = 0;
                 totalNaluIndex++;
             }
@@ -249,15 +230,15 @@ int OpenH264EncoderImpl::Encode(const webrtc::VideoFrame &input_image,
     pic.iPicWidth = input_image.width();
     pic.iPicHeight = input_image.height();
     pic.iColorFormat = videoFormatI420;
-    //pic.uiTimeStamp = input_image.render_time_ms();
-    pic.uiTimeStamp = timestamp;
-    timestamp += (int64_t)(1000 / codec.maxFramerate);
     pic.iStride[0] = input_image.stride(webrtc::kYPlane);
     pic.iStride[1] = input_image.stride(webrtc::kUPlane);
     pic.iStride[2] = input_image.stride(webrtc::kVPlane);
     pic.pData[0] = const_cast<uint8_t *>(input_image.buffer(webrtc::kYPlane));
     pic.pData[1] = const_cast<uint8_t *>(input_image.buffer(webrtc::kUPlane));
     pic.pData[2] = const_cast<uint8_t *>(input_image.buffer(webrtc::kVPlane));
+    // Cheat OpenH264 for the framerate
+    pic.uiTimeStamp = timestamp;
+    timestamp += (int64_t)(1000 / codec.maxFramerate);
 
     SFrameBSInfo info = {0};
     int retVal = encoder->EncodeFrame(&pic, &info);
@@ -285,16 +266,10 @@ int OpenH264EncoderImpl::Encode(const webrtc::VideoFrame &input_image,
     memset(&codec_info, 0, sizeof(codec_info));
     codec_info.codecType = webrtc::kVideoCodecH264;
 
-    // Use webrtc timestamps to ensure correct RTP sender behavior.
-    const int64 capture_time_us = webrtc::TickTime::MicrosecondTimestamp();
-    // Derive the capture time (in ms) and RTP timestamp (in 90KHz ticks).
-    int64 capture_time_ms = capture_time_us / 1000;
-    uint32_t rtp_timestamp = static_cast<uint32_t>(capture_time_us * 90 / 1000);
-
     encoded_image._encodedWidth = codec.width;
     encoded_image._encodedHeight = codec.height;
-    encoded_image._timeStamp = rtp_timestamp;
-    encoded_image.capture_time_ms_ = capture_time_ms;
+    encoded_image._timeStamp = input_image.timestamp();
+    encoded_image.capture_time_ms_ = input_image.render_time_ms();
     encoded_image._frameType = frame_type;
     encoded_image._completeFrame = true;
 
@@ -315,3 +290,5 @@ int OpenH264EncoderImpl::SetChannelParameters(uint32_t /*packet_loss*/, int64_t 
 {
     return WEBRTC_VIDEO_CODEC_OK;
 }
+
+}// namespace h264webrtc

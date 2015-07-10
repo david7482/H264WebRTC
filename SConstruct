@@ -37,8 +37,9 @@ sources = [	'main.cpp',
             'observers/set_sdp_observer.cpp',
             'observers/peer_connection_observer.cpp',
             'observers/create_sdp_observer.cpp',
-            'video_encoder/h264webrtc_video_encoder_factory.cpp',
-            'video_encoder/h264/open_h264_video_encoder_impl.cpp',
+            'codecs/codec_factory.cpp',
+            'codecs/h264/open_h264_encoder_impl.cpp',
+            'codecs/h264/open_h264_decoder_impl.cpp',
 		  ]
 
 # Build

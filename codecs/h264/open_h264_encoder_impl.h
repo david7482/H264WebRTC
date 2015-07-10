@@ -1,14 +1,17 @@
-#ifndef __OPEN_H264_VIDEO_ENCODER_IMPL_H__
-#define __OPEN_H264_VIDEO_ENCODER_IMPL_H__
+#ifndef __OPEN_H264_ENCODER_IMPL_H__
+#define __OPEN_H264_ENCODER_IMPL_H__
 
 // OpenH264 headers
 #include "wels/codec_api.h"
 #include "wels/codec_def.h"
 #include "wels/codec_app_def.h"
 
-#include "h264_video_encoder.h"
+#include "h264_encoder.h"
 
-class OpenH264EncoderImpl : public OpenH264Encoder
+namespace h264webrtc
+{
+
+class OpenH264EncoderImpl : public H264Encoder
 {
 public:
     OpenH264EncoderImpl();
@@ -96,6 +99,8 @@ private:
     bool inited;
     int64_t timestamp;
     ISVCEncoder *encoder;
-};  // end of OpenH264Encoder class
+};  // end of H264Encoder class
 
-#endif  // __OPEN_H264_VIDEO_ENCODER_IMPL_H__
+}// namespace h264webrtc
+
+#endif  // __OPEN_H264_ENCODER_IMPL_H__

@@ -6,11 +6,11 @@
 #include "talk/app/webrtc/test/fakeperiodicvideocapturer.h"
 #include "talk/app/webrtc/videosourceinterface.h"
 
+#include "codecs/codec_factory.h"
+#include "json_parser/json_parser.h"
 #include "observers/set_sdp_observer.h"
 #include "observers/create_sdp_observer.h"
 #include "observers/peer_connection_observer.h"
-#include "video_encoder/h264webrtc_video_encoder_factory.h"
-#include "json_parser/json_parser.h"
 
 namespace h264webrtc
 {
@@ -53,13 +53,18 @@ PeerManagerImp::PeerManagerImp(const std::string &stunurl) :
     signaling_thread->Start();
     worker_thread->Start();
 
-    cricket::WebRtcVideoEncoderFactory *encoder_factory = H264WebrtcVideoEncoderFactory::Create();
+    cricket::WebRtcVideoEncoderFactory *encoder_factory = H264EncoderFactory::Create();
+    g_assert(encoder_factory);
+
+    cricket::WebRtcVideoDecoderFactory *decoder_factory = H264DecoderFactory::Create();
+    g_assert(decoder_factory);
+
     peer_connection_factory = webrtc::CreatePeerConnectionFactory(
             worker_thread,
             signaling_thread,
             NULL,
-            NULL,
-            NULL
+            encoder_factory,
+            decoder_factory
     );
     if (!peer_connection_factory.get()) {
         g_critical("Failed to initialize PeerConnectionFactory");
@@ -108,8 +113,8 @@ void PeerManagerImp::setOffser(const std::string &peerid, const Json::Value &sdp
 
     // Create SDP answer
     webrtc::FakeConstraints constraints;
-    constraints.AddMandatory(webrtc::MediaConstraintsInterface::kOfferToReceiveVideo, false);
-    constraints.AddMandatory(webrtc::MediaConstraintsInterface::kOfferToReceiveAudio, false);
+    constraints.SetMandatoryReceiveAudio(false);
+    constraints.SetMandatoryReceiveVideo(false);
     pc->CreateAnswer(CreateSDPObserver::Create(pc, signal_sdp_feedback), &constraints);
 
     g_debug("setOffser <- peerid: %s", peerid.c_str());
@@ -160,8 +165,8 @@ bool PeerManagerImp::AddStreams(webrtc::PeerConnectionInterface *peer_connection
 
         // Create video track
         /*webrtc::FakeConstraints video_constraints;
-    video_constraints.SetMandatoryMinWidth(320);
-    video_constraints.SetMandatoryMinHeight(480);*/
+        video_constraints.SetMandatoryMinWidth(320);
+        video_constraints.SetMandatoryMinHeight(480);*/
         rtc::scoped_refptr<webrtc::VideoTrackInterface> video_track(
                 peer_connection_factory->CreateVideoTrack(VIDEO_LABEL,
                                                           peer_connection_factory->CreateVideoSource(capturer,
