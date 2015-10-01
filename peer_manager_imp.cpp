@@ -215,18 +215,32 @@ cricket::VideoCapturer *PeerManagerImp::OpenVideoCaptureDevice()
         return NULL;
     }
 
-    // YuvFramesGenerator
-    cricket::Device device;
-    if (!dev_manager->GetVideoCaptureDevice("YuvFramesGenerator", &device)) {
-        g_warning("Fail to get fake video devices");
-        return NULL;
+    // Try to use the normal camera device
+    for (std::vector<cricket::Device>::iterator it = devs.begin(); it != devs.end(); ++it) {
+        cricket::Device device = *it;
+        capturer = dev_manager->CreateVideoCapturer(device);
+        if (capturer) {
+            break;
+        } else {
+            g_warning("Fail to create video capture device: %s", it->id.c_str());
+        }
     }
-    capturer = dev_manager->CreateVideoCapturer(device);
 
-    if (!capturer) {
-        g_warning("Fail to create video capture device");
-        return NULL;
+    // Use the fake yuvframegenerator
+    if (capturer == NULL) {
+        cricket::Device device;
+        if (dev_manager->GetVideoCaptureDevice("YuvFramesGenerator", &device)) {
+            capturer = dev_manager->CreateVideoCapturer(device);
+        }
+        if (capturer == NULL) {
+            g_warning("Fail to get fake video devices");
+        } else {
+            g_warning("Success to create fake video devices");
+        }
     }
+
+    if (capturer != NULL)
+        g_debug("Create capturer device: %s", capturer->GetId().c_str());
 
     return capturer;
 }
